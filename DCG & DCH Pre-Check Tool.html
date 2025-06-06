@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MK Events Viewer - DCG & DCH</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    input#searchBox {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      font-size: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f5f5f5;
+      position: sticky;
+      top: 0;
+    }
+    .region-container {
+      flex: 1;
+      margin-right: 10px;
+      overflow-x: auto;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .region-wrapper {
+      display: flex;
+      gap: 20px;
+    }
+    button {
+      padding: 6px 12px;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>📡 MediaKind Events Viewer (DCG & DCH)</h2>
+  <input type="text" id="searchBox" placeholder="🔍 Search in both regions..." onkeyup="searchAll()">
+
+  <div class="region-wrapper">
+    <div class="region-container">
+      <div class="header-row">
+        <h3>📍 DCG</h3>
+        <button onclick="exportToExcel('dcg')">⬇ Export DCG</button>
+      </div>
+      <div id="dcgContainer">Loading DCG...</div>
+    </div>
+
+    <div class="region-container">
+      <div class="header-row">
+        <h3>📍 DCH</h3>
+        <button onclick="exportToExcel('dch')">⬇ Export DCH</button>
+      </div>
+      <div id="dchContainer">Loading DCH...</div>
+    </div>
+  </div>
+
+  <script>
+    let dcgData = [], dchData = [];
+
+    function fetchBoth() {
+      document.getElementById("dcgContainer").innerHTML = "🔄 Loading DCG...";
+      document.getElementById("dchContainer").innerHTML = "🔄 Loading DCH...";
+
+      fetchRegion("https://cluster-1.uksouth-3.streaming.mediakind.com/dazn/events", "dcgContainer", "dcgTable")
+        .then(data => dcgData = data)
+        .catch(err => document.getElementById("dcgContainer").innerHTML = `❌ DCG Error: ${err}`);
+
+      fetchRegion("https://cluster-1.westeurope-3.streaming.mediakind.com/dazn/events", "dchContainer", "dchTable")
+        .then(data => dchData = data)
+        .catch(err => document.getElementById("dchContainer").innerHTML = `❌ DCH Error: ${err}`);
+    }
+
+    async function fetchRegion(url, containerId, tableId) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.statusText);
+      let json = await res.json();
+
+      if (!Array.isArray(json) && Array.isArray(json.events)) {
+        json = json.events;
+      }
+
+      const eventList = extractEventList(json);
+      renderTable(eventList, containerId, tableId);
+      return eventList;
+    }
+
+    function extractEventList(json) {
+      if (!Array.isArray(json)) json = [json];
+
+      return json.map(item => {
+        const e = item.event || {};
+        const broadcast = e.broadcasts?.[e.oaId] || {};
+        const channel = broadcast.channel || {};
+        const instances = channel.instances || [];
+
+        const sources = [];
+        const destinations = [];
+
+        instances.forEach(instance => {
+          (instance.sources || []).forEach(src => {
+            if (src.sourceId) sources.push(src.sourceId);
+          });
+          (instance.destinations || []).forEach(dest => {
+            if (dest.assetName) destinations.push(dest.assetName);
+            else if (dest.type) destinations.push(dest.type);
+          });
+        });
+
+        return {
+          oaId: e.oaId || "",
+          overrideId: e.overrideId?.[0]?.id || "",
+          streamStartTime: e.streamStartTime || "",
+          streamEndTime: e.streamEndTime || "",
+          heEventTypeName: e.heEventTypeName || "",
+          drmRequired: e.drmRequired || false,
+          regions: Array.isArray(e.regions) ? e.regions.join(", ") : "",
+          description: (e.description || "").replace(/<br\s*\/?>/gi, " ").slice(0, 150),
+          heResilience: e.heResilience || "",
+          competitionId: e.competitionId || "",
+          closedCaptioning: Array.isArray(e.closedCaptioning) ? e.closedCaptioning.join(", ") : (e.closedCaptioning || ""),
+          inProgress: e.inProgress || false,
+          sources: sources.join(", "),
+          destinations: destinations.join(", ")
+        };
+      });
+    }
+
+    function renderTable(data, containerId, tableId) {
+      if (!data || data.length === 0) {
+        document.getElementById(containerId).innerHTML = "<p>❗ No events found.</p>";
+        return;
+      }
+
+      const keys = Object.keys(data[0]);
+      let html = `<table id="${tableId}"><thead><tr>`;
+      keys.forEach(k => html += `<th>${k}</th>`);
+      html += `</tr></thead><tbody>`;
+
+      data.forEach(row => {
+        html += `<tr>`;
+        keys.forEach(k => {
+          const value = typeof row[k] === 'object' ? JSON.stringify(row[k]) : row[k];
+          html += `<td title="${value}">${value}</td>`;
+        });
+        html += `</tr>`;
+      });
+
+      html += `</tbody></table>`;
+      document.getElementById(containerId).innerHTML = html;
+    }
+
+    function exportToExcel(region) {
+      const data = region === "dcg" ? dcgData : dchData;
+      if (data.length === 0) {
+        alert("⚠️ No data to export for " + region.toUpperCase());
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, region.toUpperCase());
+      XLSX.writeFile(wb, `${region.toUpperCase()}_Events.xlsx`);
+    }
+
+    let debounceTimer;
+    function searchAll() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const input = document.getElementById("searchBox").value.toLowerCase();
+        ["dcgTable", "dchTable"].forEach(tableId => {
+          const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+          rows.forEach(row => {
+            const match = Array.from(row.cells).some(cell =>
+              cell.textContent.toLowerCase().includes(input)
+            );
+            row.style.display = match ? "" : "none";
+          });
+        });
+      }, 300);
+    }
+
+    window.onload = fetchBoth;
+  </script>
+
+</body>
+</html>
