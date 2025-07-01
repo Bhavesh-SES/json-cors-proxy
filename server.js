@@ -1,24 +1,26 @@
-// server.js
 const express = require('express');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch'); // use global fetch in Node 18+
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 
-app.get('/proxy', async (req, res) => {
-  const targetUrl = req.query.url;
-  if (!targetUrl) return res.status(400).json({ error: 'Missing URL param' });
+app.get('/', async (req, res) => {
+  const targetUrl = req.query.target;
+  if (!targetUrl) return res.status(400).json({ error: "Missing target URL" });
 
   try {
-    const response = await fetch(targetUrl);
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.toString() });
+    const response = await fetch(targetUrl, { method: 'HEAD' });
+
+    res.status(200).json({
+      status: response.status,
+      statusText: response.statusText
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Fetch failed", message: err.message });
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Proxy running on port ${port}`));
-
+app.listen(3000, () => {
+  console.log("Proxy server running on port 3000");
+});
