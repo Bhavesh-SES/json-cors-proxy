@@ -1,14 +1,12 @@
 {
   "name": "json-cors-proxy",
   "version": "1.0.0",
-  "description": "A simple JSON CORS proxy using Express",
-  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "node-fetch": "^2.6.7",
+    "node-fetch": "^2.6.12",
     "cors": "^2.8.5"
   }
 }
